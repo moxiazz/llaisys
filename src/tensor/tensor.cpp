@@ -5,6 +5,8 @@
 #include <cstring>
 #include <numeric>
 #include <sstream>
+#include <stdexcept>
+#include <iostream>
 
 namespace llaisys {
 
@@ -163,28 +165,103 @@ void Tensor::debug() const {
     }
 }
 
+// Task-1.2: Check if tensor is contiguous
 bool Tensor::isContiguous() const {
-    TO_BE_IMPLEMENTED();
+    ptrdiff_t expected_stride = 1;
+    size_t i = _meta.shape.size();
+    while (i > 0) {
+        i--;
+        if (_meta.shape[i] == 1) {
+            continue; 
+        }
+        if (_meta.strides[i] != expected_stride) {
+            return false;
+        }
+        expected_stride *= static_cast<ptrdiff_t>(_meta.shape[i]);
+    }
     return true;
 }
 
+// Task-1.4: Permute dimensions
 tensor_t Tensor::permute(const std::vector<size_t> &order) const {
-    TO_BE_IMPLEMENTED();
-    return std::shared_ptr<Tensor>(new Tensor(_meta, _storage));
+    if (order.size() != _meta.shape.size()) {
+        throw std::runtime_error("Permute order size does not match tensor dimensions.");
+    }
+
+    std::vector<size_t> new_shape;
+    std::vector<ptrdiff_t> new_strides;
+    new_shape.reserve(order.size());
+    new_strides.reserve(order.size());
+
+    for (size_t idx : order) {
+        if (idx >= _meta.shape.size()) {
+            throw std::runtime_error("Invalid dimension index in permute order.");
+        }
+        new_shape.push_back(_meta.shape[idx]);
+        new_strides.push_back(_meta.strides[idx]);
+    }
+
+    TensorMeta new_meta{_meta.dtype, new_shape, new_strides};
+    // Shares the same storage and offset
+    return std::shared_ptr<Tensor>(new Tensor(new_meta, _storage, _offset));
 }
 
+// Task-1.3: View tensor with new shape
 tensor_t Tensor::view(const std::vector<size_t> &shape) const {
-    TO_BE_IMPLEMENTED();
-    return std::shared_ptr<Tensor>(new Tensor(_meta, _storage));
+    size_t new_numel = std::accumulate(shape.begin(), shape.end(), size_t(1), std::multiplies<size_t>());
+    if (new_numel != this->numel()) {
+        throw std::runtime_error("View shape mismatch: number of elements must remain the same.");
+    }
+
+    if (!this->isContiguous()) {
+        throw std::runtime_error("View called on non-contiguous tensor. Call contiguous() first.");
+    }
+
+    std::vector<ptrdiff_t> new_strides(shape.size());
+    size_t stride = 1;
+    size_t i = shape.size();
+    while (i > 0) {
+        i--;
+        new_strides[i] = stride;
+        stride *= shape[i];
+    }
+
+    TensorMeta new_meta{_meta.dtype, shape, new_strides};
+    return std::shared_ptr<Tensor>(new Tensor(new_meta, _storage, _offset));
 }
 
+// Task-1.5: Slice tensor
 tensor_t Tensor::slice(size_t dim, size_t start, size_t end) const {
-    TO_BE_IMPLEMENTED();
-    return std::shared_ptr<Tensor>(new Tensor(_meta, _storage));
+    if (dim >= _meta.shape.size()) {
+        throw std::runtime_error("Slice dimension out of bounds.");
+    }
+    if (start > end || end > _meta.shape[dim]) {
+        throw std::runtime_error("Invalid slice indices.");
+    }
+
+    std::vector<size_t> new_shape = _meta.shape;
+    new_shape[dim] = end - start;
+
+    std::vector<ptrdiff_t> new_strides = _meta.strides;
+
+    size_t new_offset = _offset + start * _meta.strides[dim] * utils::dsize(_meta.dtype);
+
+    TensorMeta new_meta{_meta.dtype, new_shape, new_strides};
+    return std::shared_ptr<Tensor>(new Tensor(new_meta, _storage, new_offset));
 }
 
+// Task-1.1: Load data from host
 void Tensor::load(const void *src_) {
-    TO_BE_IMPLEMENTED();
+    size_t total_bytes = this->numel() * this->elementSize();
+    
+    core::context().setDevice(this->deviceType(), this->deviceId());
+    
+    core::context().runtime().api()->memcpy_sync(
+        this->data(), 
+        src_, 
+        total_bytes, 
+        LLAISYS_MEMCPY_H2D
+    );
 }
 
 tensor_t Tensor::contiguous() const {

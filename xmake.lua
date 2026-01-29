@@ -29,6 +29,7 @@ target("llaisys-utils")
 
     add_files("src/utils/*.cpp")
 
+
     on_install(function (target) end)
 target_end()
 
@@ -106,6 +107,11 @@ target("llaisys")
     set_languages("cxx17")
     set_warnings("all", "error")
     add_files("src/llaisys/*.cc")
+    -- 添加模型的实现逻辑代码
+    add_files("src/models/**.cpp")
+
+    -- 添加模型的 C API 接口代码
+    add_files("src/llaisys/models/*.cpp")
     set_installdir(".")
 
     
